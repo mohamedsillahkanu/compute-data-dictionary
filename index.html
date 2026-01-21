@@ -182,7 +182,7 @@
                         <div class="feature-card">
                             <h4>Supported Operations</h4>
                             <ul>
-                                <li><strong>addition:</strong> Sum all component columns (NA treated as 0)</li>
+                                <li><strong>addition / rowsum / sum:</strong> Sum all component columns (NA ignored)</li>
                                 <li><strong>subtraction:</strong> First minus second (NA treated as 0)</li>
                                 <li><strong>multiplication:</strong> Multiply all columns (NA treated as 0)</li>
                                 <li><strong>division:</strong> First divided by second</li>
@@ -194,7 +194,7 @@
                         <div class="feature-card">
                             <h4>NA Handling Rules</h4>
                             <ol>
-                                <li><strong>NA + 2 = 2</strong> (NA treated as 0)</li>
+                                <li><strong>NA + 2 = 2</strong> (NA ignored in sum)</li>
                                 <li><strong>2 - NA = 2</strong> (NA treated as 0)</li>
                                 <li><strong>NA × 2 = 0</strong> (NA treated as 0)</li>
                                 <li><strong>2 ÷ NA = blank</strong> (division by NA)</li>
@@ -225,7 +225,7 @@
                             <strong style="color:#6f42c1;">Purple (⟵):</strong> Uses previously computed variable |
                             <strong style="color:#dc3545;">Red:</strong> Missing column |
                             <strong>Order matters:</strong> Rules are processed top-to-bottom |
-                            <strong>NA = 0:</strong> Missing values treated as zero in calculations
+                            <strong>NA ignored:</strong> Missing values are skipped in calculations
                         </div>
                         <div class="compute-list" id="computeList"></div>
                     </div>
@@ -283,11 +283,10 @@
         let configFile = null;
         let originalData = [];
         let originalColumns = [];
-        let originalColumnsLower = {}; // Map lowercase -> original name
         let computations = [];
         let computedData = [];
         let newColumns = [];
-        let orderedColumns = []; // For smart column ordering
+        let orderedColumns = [];
 
         // Operation display names mapping
         const operationDisplayNames = {
@@ -300,13 +299,14 @@
             'minimum': 'Minimum'
         };
 
-        // Normalize operation names
+        // Normalize operation names - ADDED rowsum support
         function normalizeOperation(op) {
             const normalized = op.toLowerCase().trim();
-            if (['add', 'addition', 'sum'].includes(normalized)) return 'addition';
-            if (['subtract', 'subtraction', 'minus'].includes(normalized)) return 'subtraction';
-            if (['multiply', 'multiplication', 'product'].includes(normalized)) return 'multiplication';
-            if (['divide', 'division'].includes(normalized)) return 'division';
+            // Addition variants - INCLUDING rowsum
+            if (['add', 'addition', 'sum', 'rowsum', 'row_sum', 'total', 'plus'].includes(normalized)) return 'addition';
+            if (['subtract', 'subtraction', 'minus', 'diff', 'difference'].includes(normalized)) return 'subtraction';
+            if (['multiply', 'multiplication', 'product', 'times'].includes(normalized)) return 'multiplication';
+            if (['divide', 'division', 'ratio'].includes(normalized)) return 'division';
             if (['average', 'avg', 'mean'].includes(normalized)) return 'average';
             if (['max', 'maximum'].includes(normalized)) return 'maximum';
             if (['min', 'minimum'].includes(normalized)) return 'minimum';
@@ -314,8 +314,7 @@
         }
 
         /**
-         * NORMALIZE COLUMN NAME
-         * Trim whitespace, handle common issues
+         * NORMALIZE COLUMN NAME - trim whitespace
          */
         function normalizeColName(name) {
             if (!name) return '';
@@ -323,18 +322,17 @@
         }
 
         /**
-         * FIND MATCHING COLUMN (case-insensitive with fallback)
-         * Returns the actual column name that matches
+         * FIND MATCHING COLUMN (case-insensitive)
          */
         function findMatchingColumn(searchName, availableColumns) {
             const normalized = normalizeColName(searchName);
             
-            // First try exact match
+            // Exact match first
             if (availableColumns.includes(normalized)) {
                 return normalized;
             }
             
-            // Try case-insensitive match
+            // Case-insensitive match
             const lowerSearch = normalized.toLowerCase();
             for (let col of availableColumns) {
                 if (col.toLowerCase() === lowerSearch) {
@@ -342,90 +340,61 @@
                 }
             }
             
-            // No match found
             return null;
         }
 
         /**
-         * ROBUST NUMERIC CONVERSION
-         * Handles: numbers, strings with numbers, NA, N/A, null, undefined, empty strings, whitespace
-         * Returns: { value: number|null, isNA: boolean }
+         * CHECK IF VALUE IS NA/NULL/EMPTY
+         * Returns true if the value should be treated as missing
          */
-        function toNumeric(val) {
-            // Handle null, undefined
-            if (val === null || val === undefined) {
-                return { value: null, isNA: true };
-            }
-            
-            // If already a number
-            if (typeof val === 'number') {
-                if (isNaN(val)) {
-                    return { value: null, isNA: true };
+        function isNA(val) {
+            if (val === null || val === undefined) return true;
+            if (typeof val === 'number' && isNaN(val)) return true;
+            if (typeof val === 'string') {
+                const str = val.trim().toLowerCase();
+                if (str === '' || str === 'na' || str === 'n/a' || str === 'nan' || 
+                    str === 'null' || str === 'nil' || str === '-' || str === '.' ||
+                    str === '#n/a' || str === '#value!' || str === '#ref!' || 
+                    str === '#div/0!' || str === 'missing' || str === 'undefined') {
+                    return true;
                 }
-                return { value: val, isNA: false };
             }
-            
-            // Convert to string and trim
-            let str = String(val).trim();
-            
-            // Check for empty string
-            if (str === '') {
-                return { value: null, isNA: true };
-            }
-            
-            // Check for NA variants (case-insensitive)
-            const naPatterns = ['na', 'n/a', 'nan', 'null', 'nil', '-', '.', '#n/a', '#value!', '#ref!', '#div/0!', 'missing', 'undefined'];
-            if (naPatterns.includes(str.toLowerCase())) {
-                return { value: null, isNA: true };
-            }
-            
-            // Remove commas and spaces from numbers (e.g., "1,234" -> "1234")
-            str = str.replace(/,/g, '').replace(/\s/g, '');
-            
-            // Try to parse as number
-            const num = parseFloat(str);
-            
-            if (isNaN(num)) {
-                return { value: null, isNA: true };
-            }
-            
-            return { value: num, isNA: false };
+            return false;
         }
 
         /**
-         * PRE-PROCESS DATA: Convert all numeric columns to actual numbers
-         * Also normalizes column names (trim whitespace)
-         * This runs ONCE after data is loaded
+         * CONVERT VALUE TO NUMBER
+         * Returns the numeric value or null if not a number
          */
-        function preprocessData(data) {
-            if (data.length === 0) return [];
+        function toNumber(val) {
+            if (isNA(val)) return null;
             
-            // First, normalize column names in the data
-            const oldKeys = Object.keys(data[0]);
-            const keyMapping = {}; // old -> new (normalized)
+            if (typeof val === 'number') return val;
             
-            oldKeys.forEach(key => {
-                keyMapping[key] = normalizeColName(key);
-            });
+            // Clean string and parse
+            let str = String(val).trim().replace(/,/g, '').replace(/\s/g, '');
+            const num = parseFloat(str);
             
-            return data.map(row => {
-                const newRow = {};
-                Object.keys(row).forEach(oldKey => {
-                    const newKey = keyMapping[oldKey];
-                    const result = toNumeric(row[oldKey]);
-                    
-                    // Keep original value for non-numeric columns, convert numeric ones
-                    if (result.isNA) {
-                        newRow[newKey] = null; // Standardize all NA to null
-                    } else if (result.value !== null) {
-                        newRow[newKey] = result.value;
-                    } else {
-                        // Keep as string if it's truly non-numeric text
-                        newRow[newKey] = row[oldKey];
-                    }
-                });
-                return newRow;
-            });
+            return isNaN(num) ? null : num;
+        }
+
+        /**
+         * GET NUMERIC VALUE FROM ROW
+         * Returns { value: number|null, isNA: boolean }
+         */
+        function getNumericValue(row, colName) {
+            const rawVal = row[colName];
+            
+            if (isNA(rawVal)) {
+                return { value: null, isNA: true, raw: rawVal };
+            }
+            
+            const num = toNumber(rawVal);
+            if (num === null) {
+                return { value: null, isNA: true, raw: rawVal };
+            }
+            
+            return { value: num, isNA: false, raw: rawVal };
         }
 
         document.getElementById('dataFileInput').addEventListener('change', function(e) { handleDataFile(e.target.files[0]); });
@@ -475,28 +444,41 @@
                     return;
                 }
                 
-                // PRE-PROCESS: Convert to numeric where possible
-                originalData = preprocessData(data);
-                originalColumns = Object.keys(data[0]);
+                // Normalize column names
+                originalColumns = Object.keys(data[0]).map(normalizeColName);
+                
+                // Store data with normalized column names
+                originalData = data.map(row => {
+                    const newRow = {};
+                    Object.keys(row).forEach(key => {
+                        newRow[normalizeColName(key)] = row[key];
+                    });
+                    return newRow;
+                });
+                
                 dataFile = file;
                 
-                // Count how many values were converted
+                // Count numeric and NA values for info
                 let numericCount = 0;
                 let naCount = 0;
                 originalData.forEach(row => {
-                    Object.values(row).forEach(val => {
-                        if (val === null) naCount++;
-                        else if (typeof val === 'number') numericCount++;
+                    originalColumns.forEach(col => {
+                        const val = row[col];
+                        if (isNA(val)) {
+                            naCount++;
+                        } else if (toNumber(val) !== null) {
+                            numericCount++;
+                        }
                     });
                 });
                 
                 document.getElementById('dataFileStatus').innerHTML = 
                     'Loaded: ' + file.name + '<br>' + 
                     data.length + ' rows, ' + originalColumns.length + ' columns<br>' +
-                    '<small style="color:#666;">Numeric values: ' + numericCount.toLocaleString() + ' | NA values: ' + naCount.toLocaleString() + '</small>';
+                    '<small style="color:#666;">Numeric values: ' + numericCount.toLocaleString() + ' | NA/empty: ' + naCount.toLocaleString() + '</small>';
                 document.getElementById('dataFileStatus').className = 'file-status loaded';
                 
-                showAlert('Data file loaded and preprocessed! NA values standardized.', 'success');
+                showAlert('Data file loaded successfully!', 'success');
                 checkBothFilesLoaded();
             });
         }
@@ -521,9 +503,9 @@
                 let compCol = cols.find(c => c.toLowerCase().includes('component') || c.toLowerCase().includes('columns') || c.toLowerCase().includes('vars')) || cols[2];
                 
                 data.forEach(function(row, index) {
-                    const newVar = String(row[varCol] || '').trim();
+                    const newVar = normalizeColName(row[varCol] || '');
                     const operation = normalizeOperation(String(row[opCol] || ''));
-                    const components = String(row[compCol] || '').split(',').map(c => c.trim()).filter(c => c);
+                    const components = String(row[compCol] || '').split(',').map(c => normalizeColName(c)).filter(c => c);
                     
                     if (newVar && operation && components.length > 0) {
                         computations.push({
@@ -556,13 +538,12 @@
             document.getElementById('uploadSection').classList.add('hidden');
             document.getElementById('configSection').classList.remove('hidden');
             
-            // Validate computations SEQUENTIALLY - each computed variable becomes available for next
+            // Validate computations SEQUENTIALLY
             let validCount = 0;
             let invalidCount = 0;
-            let availableColumns = [...originalColumns]; // Start with original columns
+            let availableColumns = [...originalColumns];
             
             computations.forEach(function(comp) {
-                // Resolve component names (case-insensitive matching)
                 comp.resolvedComponents = [];
                 comp.missingCols = [];
                 
@@ -579,8 +560,7 @@
                 
                 if (comp.isValid) {
                     validCount++;
-                    // Add this computed variable to available columns for subsequent computations
-                    availableColumns.push(normalizeColName(comp.newVariable));
+                    availableColumns.push(comp.newVariable);
                     comp.isComputed = true;
                 } else {
                     invalidCount++;
@@ -595,7 +575,7 @@
                 '<div class="stats-card"><h4>Valid</h4><div class="metric-value success">' + validCount + '</div><p>Ready to compute</p></div>' +
                 '<div class="stats-card"><h4>Invalid</h4><div class="metric-value ' + (invalidCount > 0 ? 'danger' : '') + '">' + invalidCount + '</div><p>Missing columns</p></div>';
             
-            // Column tags - show original columns
+            // Column tags
             const tagsContainer = document.getElementById('columnTags');
             tagsContainer.innerHTML = '';
             originalColumns.forEach(function(col) {
@@ -617,7 +597,6 @@
                 return;
             }
             
-            // Track which variables have been computed (for showing dependencies)
             let computedSoFar = [];
             
             computations.forEach(function(comp, index) {
@@ -625,13 +604,10 @@
                 item.className = 'compute-item ' + (comp.isValid ? 'valid' : 'invalid');
                 item.id = 'comp-' + comp.id;
                 
-                // Format components with found/missing/computed indicators
-                // Show resolved names if different from original
                 let componentsHtml = comp.components.map(function(c, i) {
                     const resolved = comp.resolvedComponents ? comp.resolvedComponents[i] : null;
                     
                     if (resolved) {
-                        // Check if it's an original column or computed column
                         if (originalColumns.includes(resolved)) {
                             const displayName = (resolved !== c) ? c + ' → ' + resolved : resolved;
                             return '<span class="found">' + displayName + '</span>';
@@ -645,10 +621,7 @@
                     }
                 }).join(', ');
                 
-                // Get display name for operation
                 const displayOp = operationDisplayNames[comp.operation] || comp.operation;
-                
-                // Add order number to show sequence
                 const orderBadge = '<span style="background:#004080;color:white;padding:2px 8px;border-radius:10px;font-size:10px;margin-right:8px;">#' + (index + 1) + '</span>';
                 
                 item.innerHTML = 
@@ -659,25 +632,19 @@
                 
                 list.appendChild(item);
                 
-                // Add to computed list if valid
                 if (comp.isValid) {
-                    computedSoFar.push(normalizeColName(comp.newVariable));
+                    computedSoFar.push(comp.newVariable);
                 }
             });
         }
 
         /**
          * SMART COLUMN ORDERING
-         * Places new computed column right after the LAST component column it depends on
-         * Example: allout_u5, allout_ov5 are at positions 5,6 -> allout goes to position 7
          */
         function buildOrderedColumns(validComps) {
-            // Start with original columns
             let result = [...originalColumns];
             
             validComps.forEach(function(comp) {
-                // Find the position of the LAST component column in current result
-                // Use resolvedComponents (the actual column names used)
                 let lastComponentPos = -1;
                 (comp.resolvedComponents || comp.components).forEach(function(compCol) {
                     const pos = result.indexOf(compCol);
@@ -686,11 +653,9 @@
                     }
                 });
                 
-                // Insert new column right after the last component
                 if (lastComponentPos >= 0) {
                     result.splice(lastComponentPos + 1, 0, comp.newVariable);
                 } else {
-                    // Fallback: add at end
                     result.push(comp.newVariable);
                 }
             });
@@ -711,10 +676,7 @@
             newColumns = [];
             const results = [];
             
-            // Track all available columns (original + computed so far)
-            let allAvailableColumns = [...originalColumns];
-            
-            // Process computations SEQUENTIALLY - order matters for dependencies
+            // Process computations SEQUENTIALLY
             validComps.forEach(function(comp) {
                 try {
                     let successCount = 0;
@@ -725,101 +687,107 @@
                     computedData.forEach(function(row, rowIndex) {
                         // Get values for all components
                         const values = [];
-                        const rawValues = [];
+                        const debugInfo = [];
                         
                         comp.resolvedComponents.forEach(function(colName) {
-                            const rawVal = row[colName];
-                            rawValues.push(rawVal);
-                            
-                            // Convert to number, treating NA as 0 for most operations
-                            if (rawVal === null || rawVal === undefined) {
-                                values.push({ num: 0, isNA: true });
-                            } else if (typeof rawVal === 'number') {
-                                values.push({ num: rawVal, isNA: false });
-                            } else {
-                                const parsed = toNumeric(rawVal);
-                                values.push({ num: parsed.isNA ? 0 : parsed.value, isNA: parsed.isNA });
-                            }
+                            const result = getNumericValue(row, colName);
+                            values.push(result);
+                            debugInfo.push(colName + '=' + (result.isNA ? 'NA' : result.value));
                         });
                         
-                        let result = null;
+                        let computedResult = null;
                         
                         switch(comp.operation) {
                             case 'addition':
-                                // NA + 2 = 2 (NA treated as 0)
-                                result = 0;
+                                // SUM: Ignore NA values, sum only valid numbers
+                                // NA + 2 = 2, NA + NA = 0, 2 + 3 = 5
+                                computedResult = 0;
                                 values.forEach(v => {
-                                    result += v.num;
+                                    if (!v.isNA && v.value !== null) {
+                                        computedResult += v.value;
+                                    }
+                                    // NA is simply ignored (not added)
                                 });
                                 break;
                                 
                             case 'subtraction':
-                                // 2 - NA = 2 (NA treated as 0)
+                                // Subtraction: NA treated as 0
+                                // 2 - NA = 2 - 0 = 2
+                                // NA - 2 = 0 - 2 = 0 (capped at 0)
                                 if (values.length >= 2) {
-                                    result = Math.max(0, values[0].num - values[1].num);
+                                    const first = values[0].isNA ? 0 : values[0].value;
+                                    const second = values[1].isNA ? 0 : values[1].value;
+                                    computedResult = Math.max(0, first - second);
                                 } else if (values.length === 1) {
-                                    result = values[0].num;
+                                    computedResult = values[0].isNA ? 0 : values[0].value;
                                 }
                                 break;
                                 
                             case 'multiplication':
-                                // If any value is NA, treat as 0, so result = 0
-                                result = 1;
-                                let hasNA = false;
+                                // Multiplication: NA treated as 0, so result = 0 if any NA
+                                computedResult = 1;
+                                let hasValidValue = false;
                                 values.forEach(v => {
-                                    if (v.isNA) hasNA = true;
-                                    result *= v.num;
+                                    if (v.isNA) {
+                                        computedResult = 0; // Any NA makes result 0
+                                    } else if (computedResult !== 0) {
+                                        computedResult *= v.value;
+                                        hasValidValue = true;
+                                    }
                                 });
-                                // If any was NA (which becomes 0), result is already 0
+                                if (!hasValidValue && computedResult === 1) {
+                                    computedResult = 0; // All NA
+                                }
                                 break;
                                 
                             case 'division':
-                                // Can't divide by 0 or NA
+                                // Division: Can't divide by 0 or NA
                                 if (values.length >= 2) {
-                                    const numerator = values[0].num;
-                                    const denominator = values[1].num;
-                                    if (!values[1].isNA && denominator !== 0) {
-                                        result = numerator / denominator;
+                                    const numerator = values[0].isNA ? 0 : values[0].value;
+                                    const denominator = values[1].isNA ? null : values[1].value;
+                                    
+                                    if (denominator !== null && denominator !== 0) {
+                                        computedResult = numerator / denominator;
                                     }
+                                    // If denominator is NA or 0, result stays null
                                 }
                                 break;
                                 
                             case 'average':
-                                // Average of non-NA values only
-                                const validVals = values.filter(v => !v.isNA);
+                                // Average: Only non-NA values
+                                const validVals = values.filter(v => !v.isNA && v.value !== null);
                                 if (validVals.length > 0) {
-                                    const sum = validVals.reduce((a, b) => a + b.num, 0);
-                                    result = sum / validVals.length;
+                                    const sum = validVals.reduce((a, v) => a + v.value, 0);
+                                    computedResult = sum / validVals.length;
                                 }
                                 break;
                                 
                             case 'maximum':
-                                const maxVals = values.filter(v => !v.isNA).map(v => v.num);
+                                const maxVals = values.filter(v => !v.isNA && v.value !== null).map(v => v.value);
                                 if (maxVals.length > 0) {
-                                    result = Math.max(...maxVals);
+                                    computedResult = Math.max(...maxVals);
                                 }
                                 break;
                                 
                             case 'minimum':
-                                const minVals = values.filter(v => !v.isNA).map(v => v.num);
+                                const minVals = values.filter(v => !v.isNA && v.value !== null).map(v => v.value);
                                 if (minVals.length > 0) {
-                                    result = Math.min(...minVals);
+                                    computedResult = Math.min(...minVals);
                                 }
                                 break;
                         }
                         
                         // Store result
-                        row[comp.newVariable] = result;
+                        row[comp.newVariable] = computedResult;
                         
                         // Track stats
-                        if (result !== null) {
+                        if (computedResult !== null) {
                             successCount++;
-                            // Capture first non-trivial calculation for debugging
-                            if (sampleCalc === null && result !== 0) {
+                            if (sampleCalc === null && computedResult !== 0) {
                                 sampleCalc = {
                                     row: rowIndex + 1,
-                                    inputs: comp.resolvedComponents.map((c, i) => c + '=' + rawValues[i]),
-                                    result: result
+                                    inputs: debugInfo,
+                                    result: computedResult
                                 };
                             }
                         } else {
@@ -827,8 +795,6 @@
                         }
                     });
                     
-                    // Add to available columns for next computation
-                    allAvailableColumns.push(comp.newVariable);
                     newColumns.push(comp.newVariable);
                     
                     results.push({
@@ -873,7 +839,7 @@
                 '<div class="stats-card"><h4>Total Columns</h4><div class="metric-value">' + orderedColumns.length + '</div><p>In result</p></div>' +
                 '<div class="stats-card"><h4>Total Rows</h4><div class="metric-value">' + computedData.length + '</div><p>Processed</p></div>';
             
-            // Summary with debug info
+            // Summary
             const summary = document.getElementById('computeSummary');
             let html = '';
             results.forEach(function(r) {
@@ -882,7 +848,7 @@
                     let sampleInfo = '';
                     if (r.sampleCalc) {
                         sampleInfo = '<br><small style="color:#666;">Sample (row ' + r.sampleCalc.row + '): ' + 
-                            r.sampleCalc.inputs.join(' + ') + ' = <strong>' + 
+                            r.sampleCalc.inputs.join(', ') + ' → <strong>' + 
                             (typeof r.sampleCalc.result === 'number' ? r.sampleCalc.result.toFixed(2) : r.sampleCalc.result) + 
                             '</strong></small>';
                     }
@@ -897,7 +863,7 @@
             });
             summary.innerHTML = html;
             
-            // Preview table with ORDERED columns
+            // Preview table
             const thead = document.getElementById('previewHead');
             const tbody = document.getElementById('previewBody');
             thead.innerHTML = '';
@@ -915,23 +881,24 @@
                 orderedColumns.forEach(function(col) {
                     const val = row[col];
                     const isNew = newColumns.includes(col);
-                    let displayVal = val;
+                    let displayVal = '';
                     
                     if (val === null || val === undefined) {
                         displayVal = '';
                     } else if (typeof val === 'number') {
                         displayVal = Number.isInteger(val) ? val : val.toFixed(2);
+                    } else {
+                        displayVal = val;
                     }
                     tr += '<td' + (isNew ? ' class="new-col"' : '') + '>' + displayVal + '</td>';
                 });
                 tbody.innerHTML += tr + '</tr>';
             });
             
-            showAlert(successCount + ' new variables computed successfully! Columns ordered by dependencies.', 'success');
+            showAlert(successCount + ' new variables computed successfully!', 'success');
         }
 
         function downloadCSV() {
-            // Reorder data columns before export
             const orderedData = computedData.map(function(row) {
                 const newRow = {};
                 orderedColumns.forEach(function(col) {
@@ -948,11 +915,10 @@
             a.download = 'computed_data.csv';
             a.click();
             URL.revokeObjectURL(url);
-            showAlert('CSV downloaded with ordered columns!', 'success');
+            showAlert('CSV downloaded!', 'success');
         }
 
         function downloadExcel() {
-            // Reorder data columns before export
             const orderedData = computedData.map(function(row) {
                 const newRow = {};
                 orderedColumns.forEach(function(col) {
@@ -965,7 +931,7 @@
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Computed Data');
             XLSX.writeFile(wb, 'computed_data.xlsx');
-            showAlert('Excel downloaded with ordered columns!', 'success');
+            showAlert('Excel downloaded!', 'success');
         }
 
         function backToConfig() {
@@ -976,6 +942,7 @@
         function downloadTemplate() {
             const templateData = [
                 { new_variable: 'total_cases', operation: 'addition', components: 'confirmed_cases, suspected_cases' },
+                { new_variable: 'allout', operation: 'addition', components: 'allout_u5, allout_ov5' },
                 { new_variable: 'net_cases', operation: 'subtraction', components: 'total_cases, deaths' },
                 { new_variable: 'case_rate', operation: 'division', components: 'cases, population' },
                 { new_variable: 'avg_monthly', operation: 'average', components: 'jan, feb, mar, apr, may, jun' },
@@ -992,7 +959,7 @@
             a.download = 'compute_variables_template.csv';
             a.click();
             URL.revokeObjectURL(url);
-            showAlert('Template downloaded! Edit with your computation rules.', 'success');
+            showAlert('Template downloaded!', 'success');
         }
 
         function resetAll() {
@@ -1000,7 +967,6 @@
             configFile = null;
             originalData = [];
             originalColumns = [];
-            originalColumnsLower = {};
             computations = [];
             computedData = [];
             newColumns = [];
