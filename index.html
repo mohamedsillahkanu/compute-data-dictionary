@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compute New Variables Tool</title>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { margin: 0; padding: 20px; background-color: #ffffff; font-family: 'Oswald', Arial, sans-serif; color: #000000; font-weight: 500; }
+        .page-container { width: 100%; max-width: 1400px; margin: 0 auto; }
+        .page-header { background-color: #004080; color: #ffffff; padding: 25px 30px; text-align: center; margin-bottom: 15px; border-radius: 8px 8px 0 0; }
+        .logo-row { display: flex; justify-content: center; align-items: center; gap: 30px; margin-bottom: 15px; }
+        .logo-box { background: #ffffff; border-radius: 8px; padding: 10px; display: flex; align-items: center; justify-content: center; }
+        .logo-box img { width: 100px; height: auto; border-radius: 6px; }
+        .page-header h3 { margin: 12px 0 5px; font-size: 14px; font-weight: 700; letter-spacing: 1px; color: #ffffff; }
+        .page-header .tagline { margin: 0; font-size: 10px; font-weight: 500; color: #ffffff; }
+        .page-header h1 { margin: 20px 0 10px; font-size: 24px; font-weight: 700; color: #ffffff; letter-spacing: 1px; }
+        .page-header .subtitle { font-size: 14px; color: #ffffff; font-weight: 500; }
+        .content-card { border: 4px double #004080; border-radius: 12px; padding: 12px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); margin-bottom: 15px; }
+        .content-inner { padding: 25px; }
+        .upload-section { background: #f8f9fa; padding: 2rem; border-radius: 8px; border: 2px dashed #004080; text-align: center; margin: 1rem 0; transition: all 0.3s ease; }
+        .upload-section:hover { border-color: #0056b3; background: #e7f3ff; }
+        .upload-section h3 { color: #004080; margin-bottom: 1rem; font-size: 18px; font-weight: 700; }
+        .upload-section p { color: #000000; font-weight: 500; font-size: 14px; }
+        .file-input-wrapper { position: relative; display: inline-block; cursor: pointer; background: #004080; color: white; padding: 14px 24px; border-radius: 6px; border: 2px solid #004080; font-size: 14px; font-weight: 700; transition: all 0.3s ease; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Oswald', Arial, sans-serif; margin-top: 1rem; }
+        .file-input-wrapper:hover { background: #0056b3; border-color: #0056b3; }
+        .file-input-wrapper input[type="file"] { position: absolute; left: -9999px; }
+        .file-status { margin-top: 15px; font-weight: 700; }
+        .file-status.loaded { color: #28a745; }
+        .file-status.error { color: #dc3545; }
+        .section-header { background-color: #004080; color: #ffffff; padding: 15px 20px; margin-bottom: 20px; border-radius: 6px; display: flex; align-items: center; gap: 15px; }
+        .section-icon { background: #ffffff; color: #004080; width: 45px; height: 45px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; flex-shrink: 0; }
+        .section-title { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin: 1.5rem 0; }
+        .stats-card { background: #f8f9fa; padding: 1rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); text-align: center; border: 2px solid #004080; transition: all 0.2s; }
+        .stats-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0, 64, 128, 0.2); }
+        .stats-card h4 { color: #666; font-size: 11px; margin-bottom: 0.5rem; text-transform: uppercase; }
+        .stats-card .metric-value { font-size: 1.6rem; color: #004080; margin-bottom: 0.25rem; font-weight: 700; }
+        .stats-card .metric-value.success { color: #28a745; }
+        .stats-card .metric-value.warning { color: #ffc107; }
+        .stats-card .metric-value.danger { color: #dc3545; }
+        .stats-card p { color: #666; font-size: 11px; }
+        .btn { padding: 14px 24px; border: 2px solid #004080; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Oswald', Arial, sans-serif; transition: all 0.2s; margin: 5px; }
+        .btn-primary { background: #004080; color: #ffffff; }
+        .btn-primary:hover { background: #0056b3; border-color: #0056b3; }
+        .btn-secondary { background: #ffffff; color: #004080; }
+        .btn-secondary:hover { background: #004080; color: #ffffff; }
+        .btn-gold { background: #ffc107; color: #000000; border-color: #ffc107; }
+        .btn-gold:hover { background: #e0a800; border-color: #e0a800; }
+        .btn-success { background: #28a745; color: #ffffff; border-color: #28a745; }
+        .btn-success:hover { background: #218838; border-color: #218838; }
+        .btn:disabled { background: #6c757d; border-color: #6c757d; color: #ffffff; opacity: 0.6; cursor: not-allowed; }
+        .alert { padding: 1rem; border-radius: 6px; margin: 1rem 0; font-weight: 500; }
+        .alert-success { background: #d4edda; border: 2px solid #28a745; color: #155724; }
+        .alert-warning { background: #fff3cd; border: 2px solid #ffc107; color: #856404; }
+        .alert-error { background: #f8d7da; border: 2px solid #dc3545; color: #721c24; }
+        .alert-info { background: #e7f3ff; border: 2px solid #004080; color: #004080; }
+        .info-message { background: #e7f3ff; color: #004080; padding: 1rem; border-radius: 6px; border: 2px solid #004080; margin: 1rem 0; font-weight: 500; }
+        .hidden { display: none !important; }
+        .config-card { background: #f8f9fa; padding: 1.5rem; border-radius: 8px; border: 2px solid #004080; margin: 1rem 0; }
+        .config-card h4 { color: #004080; margin-bottom: 1rem; font-size: 16px; font-weight: 700; }
+        .compute-list { max-height: 500px; overflow-y: auto; border: 2px solid #004080; border-radius: 6px; background: #ffffff; }
+        .compute-item { display: grid; grid-template-columns: 1fr 120px 2fr 120px; gap: 1rem; padding: 1rem; border-bottom: 1px solid #ddd; align-items: center; }
+        .compute-item:last-child { border-bottom: none; }
+        .compute-item:hover { background: #f8f9fa; }
+        .compute-item.valid { background: #d4edda; }
+        .compute-item.invalid { background: #f8d7da; }
+        .var-name { font-family: 'Courier New', monospace; background: #f8f9fa; padding: 0.5rem 1rem; border-radius: 4px; border: 1px solid #004080; color: #004080; font-weight: 500; word-break: break-all; }
+        .var-name.new { background: #d4edda; border-color: #28a745; color: #155724; }
+        .operation-badge { padding: 0.4rem 0.8rem; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; text-align: center; }
+        .operation-badge.addition { background: #28a745; color: white; }
+        .operation-badge.subtraction { background: #dc3545; color: white; }
+        .operation-badge.multiplication { background: #6f42c1; color: white; }
+        .operation-badge.division { background: #fd7e14; color: white; }
+        .operation-badge.average { background: #17a2b8; color: white; }
+        .operation-badge.maximum { background: #20c997; color: white; }
+        .operation-badge.minimum { background: #6c757d; color: white; }
+        .components-list { font-family: 'Courier New', monospace; font-size: 12px; color: #333; word-break: break-all; }
+        .components-list .missing { color: #dc3545; text-decoration: line-through; }
+        .components-list .found { color: #28a745; }
+        .components-list .computed { color: #6f42c1; font-style: italic; }
+        .status-badge { padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+        .status-badge.valid { background: #28a745; color: white; }
+        .status-badge.invalid { background: #dc3545; color: white; }
+        .table-container { max-height: 400px; overflow: auto; border: 2px solid #004080; border-radius: 6px; }
+        .results-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .results-table th { background: #004080; color: #ffffff; padding: 0.75rem; text-align: left; font-weight: 700; position: sticky; top: 0; }
+        .results-table th.new-col { background: #28a745; }
+        .results-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; }
+        .results-table td.new-col { background: #d4edda; font-weight: 600; }
+        .results-table tr:nth-child(even) { background: #f8f9fa; }
+        .results-table tr:hover { background: #e7f3ff; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin: 1.5rem 0; }
+        .feature-card { background: #f8f9fa; padding: 1.5rem; border-radius: 8px; border: 2px solid #004080; }
+        .feature-card h4 { color: #004080; margin-bottom: 1rem; font-size: 16px; font-weight: 700; text-transform: uppercase; }
+        .feature-card ul, .feature-card ol { color: #000000; line-height: 1.8; padding-left: 1.5rem; }
+        .feature-card li { margin-bottom: 0.5rem; font-weight: 500; font-size: 14px; }
+        .feature-card strong { color: #004080; }
+        .page-footer { background-color: #004080; color: #ffffff; padding: 20px 30px; text-align: center; font-size: 13px; line-height: 1.7; font-weight: 500; border-radius: 0 0 8px 8px; }
+        .page-footer p { margin: 6px 0 0; font-size: 12px; color: #ffffff; }
+        .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .dict-format { background: #fff3cd; border: 2px solid #ffc107; border-radius: 6px; padding: 1rem; margin: 1rem 0; }
+        .dict-format h5 { color: #856404; margin-bottom: 0.5rem; }
+        .dict-format code { background: #ffffff; padding: 0.5rem; border-radius: 4px; display: block; margin-top: 0.5rem; font-size: 12px; }
+        .column-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0; max-height: 150px; overflow-y: auto; padding: 0.5rem; background: #f8f9fa; border-radius: 6px; }
+        .column-tag { background: #004080; color: white; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 12px; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f8f9fa; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #004080; border-radius: 4px; }
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .content-inner { padding: 15px; }
+            .page-header h1 { font-size: 20px; }
+            .upload-grid { grid-template-columns: 1fr; }
+            .compute-item { grid-template-columns: 1fr; gap: 0.5rem; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .feature-grid { grid-template-columns: 1fr; }
+            .btn { padding: 12px 20px; font-size: 13px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <div class="page-header">
+            <div class="logo-row">
+                <div class="logo-box">
+                    <img src="https://github.com/mohamedsillahkanu/gdp-dashboard-2/raw/6c7463b0d5c3be150aafae695a4bcbbd8aeb1499/ICF-SL.jpg" alt="ICF-SL Logo">
+                </div>
+            </div>
+            <h3>Informatics Consultancy Firm-Sierra Leone<br>(ICF-SL)</h3>
+            <p class="tagline"><em>Driving Data-Driven Solutions for Health and Development</em></p>
+            <h1>COMPUTE NEW VARIABLES TOOL</h1>
+            <p class="subtitle">Create New Calculated Variables Using a Configuration File</p>
+        </div>
+
+        <div class="content-card">
+            <div class="content-inner">
+                <div id="alertContainer"></div>
+
+                <!-- Upload Section -->
+                <div id="uploadSection">
+                    <div class="section-header">
+                        <span class="section-icon">1</span>
+                        <span class="section-title">UPLOAD FILES</span>
+                    </div>
+
+                    <div class="upload-grid">
+                        <div class="upload-section" id="dataUploadSection">
+                            <h3>STEP 1: DATA FILE</h3>
+                            <p>Upload your main data file (CSV or Excel)</p>
+                            <label class="file-input-wrapper">
+                                Choose Data File
+                                <input type="file" id="dataFileInput" accept=".csv,.xlsx,.xls">
+                            </label>
+                            <div id="dataFileStatus" class="file-status"></div>
+                        </div>
+
+                        <div class="upload-section" id="configUploadSection">
+                            <h3>STEP 2: COMPUTATION CONFIG</h3>
+                            <p>Upload computation rules file (CSV or Excel)</p>
+                            <label class="file-input-wrapper">
+                                Choose Config File
+                                <input type="file" id="configFileInput" accept=".csv,.xlsx,.xls">
+                            </label>
+                            <div id="configFileStatus" class="file-status"></div>
+                        </div>
+                    </div>
+
+                    <div class="dict-format">
+                        <h5>Configuration File Format</h5>
+                        <p>Your config file should have three columns: <strong>new_variable</strong>, <strong>operation</strong>, and <strong>components</strong> (comma-separated column names).</p>
+                        <code>new_variable | operation | components<br>total_cases | addition | confirmed_cases, suspected_cases<br>net_cases | subtraction | total_cases, deaths<br>avg_value | average | value1, value2, value3<br>case_rate | division | cases, population</code>
+                        <div style="margin-top: 1rem;">
+                            <button class="btn btn-secondary" onclick="downloadTemplate()" style="padding: 10px 20px; font-size: 12px;">Download Sample Template</button>
+                        </div>
+                    </div>
+
+                    <div class="feature-grid">
+                        <div class="feature-card">
+                            <h4>Supported Operations</h4>
+                            <ul>
+                                <li><strong>addition:</strong> Sum all component columns</li>
+                                <li><strong>subtraction:</strong> First column minus second (result ≥ 0)</li>
+                                <li><strong>multiplication:</strong> Multiply all component columns</li>
+                                <li><strong>division:</strong> First column divided by second</li>
+                                <li><strong>average:</strong> Mean of all component columns</li>
+                                <li><strong>maximum:</strong> Maximum value across columns</li>
+                                <li><strong>minimum:</strong> Minimum value across columns</li>
+                            </ul>
+                        </div>
+                        <div class="feature-card">
+                            <h4>How It Works</h4>
+                            <ol>
+                                <li><strong>Upload Data:</strong> Your main dataset</li>
+                                <li><strong>Upload Config:</strong> Computation rules</li>
+                                <li><strong>Validate:</strong> Check for missing columns</li>
+                                <li><strong>Compute:</strong> Generate new variables</li>
+                                <li><strong>Download:</strong> Get enhanced dataset</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configuration Section -->
+                <div id="configSection" class="hidden">
+                    <div class="section-header">
+                        <span class="section-icon">2</span>
+                        <span class="section-title">COMPUTATION CONFIGURATION</span>
+                    </div>
+
+                    <div class="stats-grid" id="configStats"></div>
+
+                    <div class="config-card">
+                        <h4>Available Columns in Data File</h4>
+                        <div class="column-tags" id="columnTags"></div>
+                    </div>
+
+                    <div class="config-card">
+                        <h4>Computation Rules</h4>
+                        <div class="info-message">
+                            <strong>Green:</strong> Original column found | 
+                            <strong style="color:#6f42c1;">Purple (⟵):</strong> Uses previously computed variable |
+                            <strong style="color:#dc3545;">Red:</strong> Missing column |
+                            <strong>Order matters:</strong> Rules are processed top-to-bottom
+                        </div>
+                        <div class="compute-list" id="computeList"></div>
+                    </div>
+
+                    <div style="text-align: center; margin-top: 1.5rem;">
+                        <button class="btn btn-gold" id="computeBtn" onclick="computeVariables()">Compute Variables</button>
+                        <button class="btn btn-secondary" onclick="resetAll()">Start Over</button>
+                    </div>
+                </div>
+
+                <!-- Results Section -->
+                <div id="resultsSection" class="hidden">
+                    <div class="section-header">
+                        <span class="section-icon">3</span>
+                        <span class="section-title">COMPUTED DATA</span>
+                    </div>
+
+                    <div class="stats-grid" id="resultStats"></div>
+
+                    <div class="config-card">
+                        <h4>Computation Summary</h4>
+                        <div id="computeSummary"></div>
+                    </div>
+
+                    <div class="config-card">
+                        <h4>Data Preview (First 100 Rows)</h4>
+                        <div class="table-container">
+                            <table class="results-table" id="previewTable">
+                                <thead id="previewHead"></thead>
+                                <tbody id="previewBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div style="text-align: center; margin: 2rem 0;">
+                        <button class="btn btn-success" onclick="downloadExcel()">Download Excel</button>
+                        <button class="btn btn-primary" onclick="downloadCSV()">Download CSV</button>
+                        <button class="btn btn-secondary" onclick="backToConfig()">Back to Config</button>
+                        <button class="btn btn-secondary" onclick="resetAll()">Start Over</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-footer">
+            <p style="margin: 0; font-weight: 700;">National Malaria Control Programme</p>
+            <p>Ministry of Health and Sanitation, Sierra Leone</p>
+            <p style="font-size: 11px;">Medical Stores Compound, Freetown, Sierra Leone</p>
+            <p style="font-size: 10px;">© 2025 Informatics Consultancy Firm-Sierra Leone (ICF-SL)</p>
+        </div>
+    </div>
+
+    <script>
+        let dataFile = null;
+        let configFile = null;
+        let originalData = [];
+        let originalColumns = [];
+        let computations = [];
+        let computedData = [];
+        let newColumns = [];
+
+        // Operation display names mapping
+        const operationDisplayNames = {
+            'addition': 'Addition',
+            'subtraction': 'Subtraction',
+            'multiplication': 'Multiplication',
+            'division': 'Division',
+            'average': 'Average',
+            'maximum': 'Maximum',
+            'minimum': 'Minimum'
+        };
+
+        // Normalize operation names
+        function normalizeOperation(op) {
+            const normalized = op.toLowerCase().trim();
+            if (['add', 'addition', 'sum'].includes(normalized)) return 'addition';
+            if (['subtract', 'subtraction', 'minus'].includes(normalized)) return 'subtraction';
+            if (['multiply', 'multiplication', 'product'].includes(normalized)) return 'multiplication';
+            if (['divide', 'division'].includes(normalized)) return 'division';
+            if (['average', 'avg', 'mean'].includes(normalized)) return 'average';
+            if (['max', 'maximum'].includes(normalized)) return 'maximum';
+            if (['min', 'minimum'].includes(normalized)) return 'minimum';
+            return normalized;
+        }
+
+        document.getElementById('dataFileInput').addEventListener('change', function(e) { handleDataFile(e.target.files[0]); });
+        document.getElementById('configFileInput').addEventListener('change', function(e) { handleConfigFile(e.target.files[0]); });
+
+        function showAlert(message, type) {
+            const container = document.getElementById('alertContainer');
+            const div = document.createElement('div');
+            div.className = 'alert alert-' + type;
+            div.textContent = message;
+            container.innerHTML = '';
+            container.appendChild(div);
+            setTimeout(function() { if (div.parentNode) div.parentNode.removeChild(div); }, 5000);
+        }
+
+        function parseFile(file, callback) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            
+            if (ext === 'csv') {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) { callback(results.data); },
+                    error: function(err) { showAlert('Error reading CSV: ' + err.message, 'error'); }
+                });
+            } else if (ext === 'xlsx' || ext === 'xls') {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const data = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+                        callback(data);
+                    } catch (err) { showAlert('Error reading Excel: ' + err.message, 'error'); }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        }
+
+        function handleDataFile(file) {
+            if (!file) return;
+            
+            parseFile(file, function(data) {
+                if (data.length === 0) {
+                    document.getElementById('dataFileStatus').innerHTML = 'Error: Empty file';
+                    document.getElementById('dataFileStatus').className = 'file-status error';
+                    return;
+                }
+                
+                originalData = data;
+                originalColumns = Object.keys(data[0]);
+                dataFile = file;
+                
+                document.getElementById('dataFileStatus').innerHTML = 'Loaded: ' + file.name + '<br>' + data.length + ' rows, ' + originalColumns.length + ' columns';
+                document.getElementById('dataFileStatus').className = 'file-status loaded';
+                
+                showAlert('Data file loaded successfully!', 'success');
+                checkBothFilesLoaded();
+            });
+        }
+
+        function handleConfigFile(file) {
+            if (!file) return;
+            
+            parseFile(file, function(data) {
+                if (data.length === 0) {
+                    document.getElementById('configFileStatus').innerHTML = 'Error: Empty file';
+                    document.getElementById('configFileStatus').className = 'file-status error';
+                    return;
+                }
+                
+                // Parse computation rules
+                computations = [];
+                const cols = Object.keys(data[0]);
+                
+                // Find the right columns (flexible naming)
+                let varCol = cols.find(c => c.toLowerCase().includes('new') || c.toLowerCase().includes('variable') || c.toLowerCase().includes('name')) || cols[0];
+                let opCol = cols.find(c => c.toLowerCase().includes('operation') || c.toLowerCase().includes('op')) || cols[1];
+                let compCol = cols.find(c => c.toLowerCase().includes('component') || c.toLowerCase().includes('columns') || c.toLowerCase().includes('vars')) || cols[2];
+                
+                data.forEach(function(row, index) {
+                    const newVar = String(row[varCol] || '').trim();
+                    const operation = normalizeOperation(String(row[opCol] || ''));
+                    const components = String(row[compCol] || '').split(',').map(c => c.trim()).filter(c => c);
+                    
+                    if (newVar && operation && components.length > 0) {
+                        computations.push({
+                            id: 'config-' + index,
+                            newVariable: newVar,
+                            operation: operation,
+                            components: components,
+                            source: 'config'
+                        });
+                    }
+                });
+                
+                configFile = file;
+                
+                document.getElementById('configFileStatus').innerHTML = 'Loaded: ' + file.name + '<br>' + computations.length + ' rules found';
+                document.getElementById('configFileStatus').className = 'file-status loaded';
+                
+                showAlert('Config file loaded! ' + computations.length + ' computation rules found.', 'success');
+                checkBothFilesLoaded();
+            });
+        }
+
+        function checkBothFilesLoaded() {
+            if (dataFile && configFile && originalData.length > 0) {
+                buildConfigInterface();
+            }
+        }
+
+        function buildConfigInterface() {
+            document.getElementById('uploadSection').classList.add('hidden');
+            document.getElementById('configSection').classList.remove('hidden');
+            
+            // Validate computations SEQUENTIALLY - each computed variable becomes available for next
+            let validCount = 0;
+            let invalidCount = 0;
+            let availableColumns = [...originalColumns]; // Start with original columns
+            
+            computations.forEach(function(comp) {
+                // Check against currently available columns (original + previously computed)
+                comp.missingCols = comp.components.filter(c => !availableColumns.includes(c));
+                comp.isValid = comp.missingCols.length === 0;
+                
+                if (comp.isValid) {
+                    validCount++;
+                    // Add this computed variable to available columns for subsequent computations
+                    availableColumns.push(comp.newVariable);
+                    comp.isComputed = true;
+                } else {
+                    invalidCount++;
+                    comp.isComputed = false;
+                }
+            });
+            
+            // Stats
+            document.getElementById('configStats').innerHTML = 
+                '<div class="stats-card"><h4>Data Columns</h4><div class="metric-value">' + originalColumns.length + '</div><p>Original</p></div>' +
+                '<div class="stats-card"><h4>Computation Rules</h4><div class="metric-value">' + computations.length + '</div><p>Total</p></div>' +
+                '<div class="stats-card"><h4>Valid</h4><div class="metric-value success">' + validCount + '</div><p>Ready to compute</p></div>' +
+                '<div class="stats-card"><h4>Invalid</h4><div class="metric-value ' + (invalidCount > 0 ? 'danger' : '') + '">' + invalidCount + '</div><p>Missing columns</p></div>';
+            
+            // Column tags - show original columns
+            const tagsContainer = document.getElementById('columnTags');
+            tagsContainer.innerHTML = '';
+            originalColumns.forEach(function(col) {
+                const tag = document.createElement('span');
+                tag.className = 'column-tag';
+                tag.textContent = col;
+                tagsContainer.appendChild(tag);
+            });
+            
+            renderComputeList();
+        }
+
+        function renderComputeList() {
+            const list = document.getElementById('computeList');
+            list.innerHTML = '';
+            
+            if (computations.length === 0) {
+                list.innerHTML = '<div style="padding: 2rem; text-align: center; color: #666;">No computation rules found in config file.</div>';
+                return;
+            }
+            
+            // Track which variables have been computed (for showing dependencies)
+            let computedSoFar = [];
+            
+            computations.forEach(function(comp, index) {
+                const item = document.createElement('div');
+                item.className = 'compute-item ' + (comp.isValid ? 'valid' : 'invalid');
+                item.id = 'comp-' + comp.id;
+                
+                // Format components with found/missing/computed indicators
+                let componentsHtml = comp.components.map(function(c) {
+                    if (originalColumns.includes(c)) {
+                        return '<span class="found">' + c + '</span>';
+                    } else if (computedSoFar.includes(c)) {
+                        return '<span class="computed">' + c + ' ⟵</span>';
+                    } else {
+                        return '<span class="missing">' + c + '</span>';
+                    }
+                }).join(', ');
+                
+                // Get display name for operation
+                const displayOp = operationDisplayNames[comp.operation] || comp.operation;
+                
+                // Add order number to show sequence
+                const orderBadge = '<span style="background:#004080;color:white;padding:2px 8px;border-radius:10px;font-size:10px;margin-right:8px;">#' + (index + 1) + '</span>';
+                
+                item.innerHTML = 
+                    '<div class="var-name new">' + orderBadge + comp.newVariable + '</div>' +
+                    '<div class="operation-badge ' + comp.operation + '">' + displayOp + '</div>' +
+                    '<div class="components-list">' + componentsHtml + '</div>' +
+                    '<div class="status-badge ' + (comp.isValid ? 'valid' : 'invalid') + '">' + (comp.isValid ? 'Valid' : 'Missing: ' + comp.missingCols.join(', ')) + '</div>';
+                
+                list.appendChild(item);
+                
+                // Add to computed list if valid
+                if (comp.isValid) {
+                    computedSoFar.push(comp.newVariable);
+                }
+            });
+        }
+
+        function computeVariables() {
+            const validComps = computations.filter(c => c.isValid);
+            
+            if (validComps.length === 0) {
+                showAlert('No valid computations to perform', 'error');
+                return;
+            }
+            
+            // Create copy of data
+            computedData = originalData.map(row => ({...row}));
+            newColumns = [];
+            const results = [];
+            
+            // Process computations SEQUENTIALLY - order matters for dependencies
+            validComps.forEach(function(comp) {
+                try {
+                    // Process each row - the new variable will be available for next computation
+                    computedData.forEach(function(row) {
+                        const values = comp.components.map(c => {
+                            const val = parseFloat(row[c]);
+                            return isNaN(val) ? null : val;
+                        });
+                        
+                        let result = null;
+                        const validValues = values.filter(v => v !== null);
+                        
+                        switch(comp.operation) {
+                            case 'addition':
+                                if (validValues.length > 0) {
+                                    result = validValues.reduce((a, b) => a + b, 0);
+                                }
+                                break;
+                            case 'subtraction':
+                                if (values.length >= 2 && values[0] !== null && values[1] !== null) {
+                                    result = Math.max(0, values[0] - values[1]);
+                                }
+                                break;
+                            case 'multiplication':
+                                if (validValues.length === values.length && validValues.length > 0) {
+                                    result = validValues.reduce((a, b) => a * b, 1);
+                                }
+                                break;
+                            case 'division':
+                                if (values.length >= 2 && values[0] !== null && values[1] !== null && values[1] !== 0) {
+                                    result = values[0] / values[1];
+                                }
+                                break;
+                            case 'average':
+                                if (validValues.length > 0) {
+                                    result = validValues.reduce((a, b) => a + b, 0) / validValues.length;
+                                }
+                                break;
+                            case 'maximum':
+                                if (validValues.length > 0) {
+                                    result = Math.max(...validValues);
+                                }
+                                break;
+                            case 'minimum':
+                                if (validValues.length > 0) {
+                                    result = Math.min(...validValues);
+                                }
+                                break;
+                        }
+                        
+                        // Set result - this makes it available for subsequent computations
+                        row[comp.newVariable] = result;
+                    });
+                    
+                    newColumns.push(comp.newVariable);
+                    results.push({
+                        variable: comp.newVariable,
+                        operation: comp.operation,
+                        components: comp.components.join(', '),
+                        status: 'success'
+                    });
+                } catch (err) {
+                    results.push({
+                        variable: comp.newVariable,
+                        operation: comp.operation,
+                        components: comp.components.join(', '),
+                        status: 'error',
+                        error: err.message
+                    });
+                }
+            });
+            
+            showResults(results);
+        }
+
+        function showResults(results) {
+            document.getElementById('configSection').classList.add('hidden');
+            document.getElementById('resultsSection').classList.remove('hidden');
+            
+            const successCount = results.filter(r => r.status === 'success').length;
+            const errorCount = results.filter(r => r.status === 'error').length;
+            const allColumns = Object.keys(computedData[0] || {});
+            
+            document.getElementById('resultStats').innerHTML = 
+                '<div class="stats-card"><h4>Original Columns</h4><div class="metric-value">' + originalColumns.length + '</div><p>From data file</p></div>' +
+                '<div class="stats-card"><h4>New Columns</h4><div class="metric-value success">' + newColumns.length + '</div><p>Computed</p></div>' +
+                '<div class="stats-card"><h4>Total Columns</h4><div class="metric-value">' + allColumns.length + '</div><p>In result</p></div>' +
+                '<div class="stats-card"><h4>Total Rows</h4><div class="metric-value">' + computedData.length + '</div><p>Processed</p></div>';
+            
+            // Summary
+            const summary = document.getElementById('computeSummary');
+            let html = '';
+            results.forEach(function(r) {
+                const displayOp = operationDisplayNames[r.operation] || r.operation;
+                if (r.status === 'success') {
+                    html += '<div class="alert alert-success" style="margin: 0.5rem 0;"><strong>' + r.variable + '</strong> = ' + displayOp.toUpperCase() + '(' + r.components + ')</div>';
+                } else {
+                    html += '<div class="alert alert-error" style="margin: 0.5rem 0;"><strong>' + r.variable + '</strong> - Error: ' + r.error + '</div>';
+                }
+            });
+            summary.innerHTML = html;
+            
+            // Preview table
+            const thead = document.getElementById('previewHead');
+            const tbody = document.getElementById('previewBody');
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
+            
+            let headerRow = '<tr>';
+            allColumns.forEach(function(col) { 
+                const isNew = newColumns.includes(col);
+                headerRow += '<th' + (isNew ? ' class="new-col"' : '') + '>' + col + (isNew ? ' ★' : '') + '</th>'; 
+            });
+            thead.innerHTML = headerRow + '</tr>';
+            
+            computedData.slice(0, 100).forEach(function(row) {
+                let tr = '<tr>';
+                allColumns.forEach(function(col) {
+                    const val = row[col];
+                    const isNew = newColumns.includes(col);
+                    let displayVal = val;
+                    if (typeof val === 'number') {
+                        displayVal = Number.isInteger(val) ? val : val.toFixed(2);
+                    }
+                    tr += '<td' + (isNew ? ' class="new-col"' : '') + '>' + (displayVal !== null && displayVal !== undefined ? displayVal : '') + '</td>';
+                });
+                tbody.innerHTML += tr + '</tr>';
+            });
+            
+            showAlert(successCount + ' new variables computed successfully!', 'success');
+        }
+
+        function downloadCSV() {
+            const csv = Papa.unparse(computedData);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'computed_data.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+            showAlert('CSV downloaded!', 'success');
+        }
+
+        function downloadExcel() {
+            const ws = XLSX.utils.json_to_sheet(computedData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Computed Data');
+            XLSX.writeFile(wb, 'computed_data.xlsx');
+            showAlert('Excel downloaded!', 'success');
+        }
+
+        function backToConfig() {
+            document.getElementById('resultsSection').classList.add('hidden');
+            document.getElementById('configSection').classList.remove('hidden');
+        }
+
+        function downloadTemplate() {
+            const templateData = [
+                { new_variable: 'total_cases', operation: 'addition', components: 'confirmed_cases, suspected_cases' },
+                { new_variable: 'net_cases', operation: 'subtraction', components: 'total_cases, deaths' },
+                { new_variable: 'case_rate', operation: 'division', components: 'cases, population' },
+                { new_variable: 'avg_monthly', operation: 'average', components: 'jan, feb, mar, apr, may, jun' },
+                { new_variable: 'max_value', operation: 'maximum', components: 'value1, value2, value3' },
+                { new_variable: 'min_value', operation: 'minimum', components: 'value1, value2, value3' },
+                { new_variable: 'total_cost', operation: 'multiplication', components: 'quantity, unit_price' }
+            ];
+            
+            const csv = Papa.unparse(templateData);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'compute_variables_template.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+            showAlert('Template downloaded! Edit with your computation rules.', 'success');
+        }
+
+        function resetAll() {
+            dataFile = null;
+            configFile = null;
+            originalData = [];
+            originalColumns = [];
+            computations = [];
+            computedData = [];
+            newColumns = [];
+            
+            document.getElementById('dataFileInput').value = '';
+            document.getElementById('configFileInput').value = '';
+            document.getElementById('dataFileStatus').innerHTML = '';
+            document.getElementById('dataFileStatus').className = 'file-status';
+            document.getElementById('configFileStatus').innerHTML = '';
+            document.getElementById('configFileStatus').className = 'file-status';
+            document.getElementById('alertContainer').innerHTML = '';
+            
+            document.getElementById('uploadSection').classList.remove('hidden');
+            document.getElementById('configSection').classList.add('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
